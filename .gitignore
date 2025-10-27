@@ -9,7 +9,7 @@
 .env
 Backend/.env
 react-ui/.env
-
+/__pycache__
 dist/
 build/
 *.log
