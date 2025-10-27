@@ -1,0 +1,15 @@
+/models/
+/Ollama-UI/
+/stable-diffusion-xl-base-1.0/
+/sd-env/
+/sd-env311/
+/react-ui/node_modules/
+/Backend/node_modules/
+
+.env
+Backend/.env
+react-ui/.env
+
+dist/
+build/
+*.log
