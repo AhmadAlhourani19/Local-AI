@@ -97,9 +97,7 @@ Start everything:
 
 Open the app: [http://localhost:5173](http://localhost:5173)
 
----
-
 This project brings together local AI text and image generation in one unified, privacy-first environment — completely offline and fully customizable.
 You own your data, your compute, and your creativity.
 If you enjoy the project, consider sharing your feedback!
-```
+---
