@@ -11,7 +11,7 @@ export default function Topbar({
 }) {
   return (
     <header className="topbar">
-      <div className="brand">HPM Lokale KI</div>
+      <div className="brand">Lokale KI</div>
       <div className="controls">
         <label className="select">
           <span>Modell auswählen</span>
