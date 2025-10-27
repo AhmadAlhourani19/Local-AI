@@ -1,0 +1,449 @@
+# Local AI Stack — Express + React + Ollama + Stable Diffusion
+
+A fully local AI playground that combines:
+
+* **Backend:** Node.js + **Express** (TypeScript/JavaScript) with **dotenv**
+* **Frontend:** **React** + **Tailwind CSS** (Vite dev server)
+* **LLMs:** **Ollama** (runs models locally)
+* **Documents-to-LLM:** Local file reading & chunking (no cloud upload required)
+* **Images:** Text-to-image via **Stable Diffusion** on a separate **Python FastAPI** server
+
+All of this runs **offline** on your machine.
+
+---
+
+## ✨ Features
+
+* 🔒 100% local inference (no keys required)
+* 🧠 Pluggable LLMs via Ollama (switch models per request)
+* 📄 "Read my file" — drop PDFs/Docs/TXT and the server injects content into the prompt
+* 🖼️ Image generation (Stable Diffusion via Python backend)
+* 🧩 Modular monorepo layout (frontend, express server, python image server)
+* 🧪 Simple REST API with cURL examples
+
+---
+
+## 📦 Repository Structure
+
+```
+.
+├─ client/                 # React + Tailwind (Vite)
+│  ├─ src/
+│  ├─ index.html
+│  ├─ vite.config.ts|js
+│  └─ .env                # Frontend env (VITE_*)
+│
+├─ server/                 # Express API (JavaScript)
+│  ├─ src/
+│  │  ├─ index.js         # App entry
+│  │  ├─ routes/
+│  │  │  ├─ chat.js       # /api/chat (LLM chat via Ollama)
+│  │  │  ├─ files.js      # /api/files (upload/read)
+│  │  │  └─ images.js     # proxy to Python SD server
+│  │  ├─ lib/
+│  │  │  ├─ ollama.js     # Ollama client
+│  │  │  └─ chunker.js    # file parsing & chunking
+│  └─ .env                # Backend env
+│
+├─ py-image-server/        # Python FastAPI (Stable Diffusion)
+│  ├─ main.py              # /generate endpoint
+│  ├─ requirements.txt
+│  └─ .env
+│
+└─ README.md
+```
+
+> **Note:** File names may differ in your repo; this README describes the expected setup. Adjust paths as needed.
+
+---
+
+## 🧰 Prerequisites
+
+* **Node.js** ≥ 18 and **npm** (or **pnpm/yarn**)
+* **Python** ≥ 3.10 with **pip** + (optional) **virtualenv**
+* **Git**
+* **Ollama** installed: [https://ollama.com](https://ollama.com)
+* **GPU** (optional but recommended) with proper drivers for PyTorch CUDA (if you want fast image gen)
+
+---
+
+## 🐪 Install Ollama & Pull Models
+
+1. Install Ollama, then start the background service/app.
+2. Pull at least one chat model (choose what runs on your hardware):
+
+   ```bash
+   ollama pull llama3.1      # Meta Llama 3.1 (good general model)
+   # or
+   ollama pull mistral
+   # or
+   ollama pull qwen2.5:7b
+   ```
+3. (Optional) Test:
+
+   ```bash
+   ollama run llama3.1 "Say hello"
+   ```
+
+---
+
+## 🔐 Environment Variables
+
+Create **.env** files in each package. Examples below.
+
+### `server/.env`
+
+```
+NODE_ENV=development
+PORT=8000
+# Where Ollama listens; default is http://127.0.0.1:11434
+OLLAMA_HOST=http://127.0.0.1:11434
+# Default LLM if client doesn't specify
+DEFAULT_MODEL=llama3.1
+# Allow the frontend origin during local dev
+ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+# Python image server URL
+PY_IMAGE_SERVER_URL=http://127.0.0.1:8001
+# File upload size limit (e.g., 25mb)
+MAX_UPLOAD=25mb
+```
+
+### `client/.env`
+
+```
+# Vite requires VITE_ prefix for exposure to the app
+VITE_API_BASE=http://127.0.0.1:8000
+```
+
+### `py-image-server/.env` (optional)
+
+```
+HOST=127.0.0.1
+PORT=8001
+# Choose a SD pipeline, checkpoint, scheduler as you like
+MODEL_ID=stabilityai/stable-diffusion-2-1
+DEVICE=cuda   # or cpu
+```
+
+---
+
+## 🚀 Setup & Run (Development)
+
+Clone the repo and install dependencies for each service.
+
+```bash
+# 1) Clone
+git clone <your-repo-url>.git
+cd <your-repo-name>
+
+# 2) Frontend
+cd client
+npm install
+# (Optional) Tailwind init already present in repo
+# npm run dev (in a separate terminal)
+
+# 3) Backend (Express)
+cd ../server
+npm install
+# npm run dev (nodemon recommended)
+
+# 4) Python Image Server
+cd ../py-image-server
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+# Start the server (FastAPI via Uvicorn):
+uvicorn main:app --host 127.0.0.1 --port 8001 --reload
+```
+
+Start everything:
+
+* **Python SD server**: `uvicorn main:app --host 127.0.0.1 --port 8001 --reload`
+* **Express API**: in `server/` → `npm run dev`
+* **React app**: in `client/` → `npm run dev` (default Vite on `5173`)
+
+Open the app: [http://localhost:5173](http://localhost:5173)
+
+---
+
+## 🧪 Quick API Tests
+
+### Chat with a model
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "llama3.1",
+    "messages": [
+      {"role": "user", "content": "Explain transformers briefly"}
+    ]
+  }'
+```
+
+**Expected:** JSON streaming/text chunks or a full JSON object (depending on your implementation). If streaming, use `Accept: text/event-stream` on the client.
+
+### Upload a file & chat about it
+
+```bash
+# 1) Upload
+curl -X POST http://127.0.0.1:8000/api/files/upload \
+  -F file=@/path/to/your.pdf
+
+# → returns { fileId: "..." }
+
+# 2) Ask a question that includes the file context
+curl -X POST http://127.0.0.1:8000/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "llama3.1",
+    "fileIds": ["<returned-file-id>"] ,
+    "messages": [
+      {"role": "user", "content": "Summarize the uploaded PDF"}
+    ]
+  }'
+```
+
+### Generate an image
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/images/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "a watercolor of a lighthouse in a storm, high detail, cinematic"
+  }' --output lighthouse.png
+```
+
+---
+
+## 🧩 How the File Reading Works (Overview)
+
+1. Client uploads a document via `/api/files/upload`.
+2. Server detects type (PDF/TXT/Markdown, etc.), extracts text.
+3. Text is **chunked** (e.g., 1–2k tokens, with overlap) and stored in transient storage (e.g., in-memory or local data dir).
+4. During `/api/chat`, if `fileIds` are provided, the server **injects** the relevant chunks into the system prompt or message context (and can optionally do lightweight retrieval by keyword).
+5. No cloud storage is used; everything is local.
+
+> For large docs, consider a simple embedding-based retrieval (e.g., `nomic-embed-text` via Ollama) to keep prompts small.
+
+---
+
+## 🧠 Ollama Client (Server-side)
+
+Minimal example the server might use:
+
+```js
+// server/src/lib/ollama.js
+import fetch from 'node-fetch';
+
+export async function generate({ model, messages, stream = false }) {
+  const res = await fetch(`${process.env.OLLAMA_HOST}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages, stream })
+  });
+  if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
+  return stream ? res.body : res.json();
+}
+```
+
+---
+
+## 🖼️ Python Image Server (FastAPI) Sketch
+
+```py
+# py-image-server/main.py
+from fastapi import FastAPI
+from pydantic import BaseModel
+from diffusers import StableDiffusionPipeline
+import torch
+
+app = FastAPI()
+
+class GenReq(BaseModel):
+    prompt: str
+    seed: int | None = None
+    steps: int = 30
+    guidance_scale: float = 7.5
+    width: int = 512
+    height: int = 512
+
+# Load once at startup
+model_id = "stabilityai/stable-diffusion-2-1"
+device = "cuda" if torch.cuda.is_available() else "cpu"
+pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16 if device=="cuda" else torch.float32)
+pipe = pipe.to(device)
+
+@app.post("/generate")
+def generate(req: GenReq):
+    generator = torch.Generator(device=device)
+    if req.seed is not None:
+        generator = generator.manual_seed(req.seed)
+    image = pipe(
+        req.prompt,
+        num_inference_steps=req.steps,
+        guidance_scale=req.guidance_scale,
+        width=req.width,
+        height=req.height,
+        generator=generator
+    ).images[0]
+    # Return PNG bytes
+    import io
+    from fastapi.responses import Response
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
+```
+
+---
+
+## 🧭 Frontend (React + Tailwind)
+
+* Built with Vite
+* `.env` uses `VITE_` prefix; requests to `VITE_API_BASE`
+* Basic pages: Chat, Files (upload & list), Image Studio
+* Streaming UI via EventSource or fetch + ReadableStream (depending on your server)
+
+**Run:**
+
+```bash
+cd client
+npm run dev
+```
+
+---
+
+## 🏭 Production Builds
+
+### Option A — Serve Vite build from Express
+
+1. Build the frontend:
+
+   ```bash
+   cd client && npm run build
+   ```
+2. Configure Express to serve `client/dist` as static assets.
+3. Start the API in production mode:
+
+   ```bash
+   cd server && npm run start
+   ```
+4. Keep the Python server running with a process manager (e.g., `systemd`, `pm2`, or Docker).
+
+### Option B — Docker Compose (sample)
+
+```yaml
+version: '3.9'
+services:
+  api:
+    build: ./server
+    ports: ["8000:8000"]
+    environment:
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - PY_IMAGE_SERVER_URL=http://pyimg:8001
+    depends_on: [pyimg]
+  web:
+    build: ./client
+    ports: ["5173:80"]
+  pyimg:
+    build: ./py-image-server
+    ports: ["8001:8001"]
+```
+
+> You will also need a Dockerfile per service; GPU access for SD requires extra flags (NVIDIA Container Toolkit).
+
+---
+
+## 🔧 Useful npm Scripts (suggested)
+
+**server/package.json**
+
+```json
+{
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "lint": "eslint ."
+  }
+}
+```
+
+**client/package.json**
+
+```json
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 5173"
+  }
+}
+```
+
+---
+
+## 🛡️ Security & Privacy
+
+* Runs locally; no data leaves your machine.
+* Optionally restrict CORS with `ALLOWED_ORIGINS`.
+* Validate and size-limit uploads (`MAX_UPLOAD`).
+* Consider sandboxing file parsing and ignoring scripts in HTML/Doc files.
+
+---
+
+## 🧩 Troubleshooting
+
+* **Ollama connection refused** → Ensure the Ollama app/service is running. Check `OLLAMA_HOST`.
+* **Model not found** → `ollama pull <model>` first, or change `DEFAULT_MODEL`.
+* **CORS errors** → Add your frontend origin to `ALLOWED_ORIGINS` in `server/.env`.
+* **Slow/oom on image gen** → Use `DEVICE=cpu` or smaller SD model; reduce `width/height` and `steps`.
+* **PyTorch CUDA not available** → Install CUDA-enabled PyTorch matching your driver.
+* **Port conflicts** → Change `PORT` or Vite port (`vite --port 5174`).
+
+---
+
+## 🧭 Roadmap Ideas
+
+* Embeddings + vector search for smarter retrieval (e.g., `nomic-embed-text` via Ollama)
+* Multi-file projects with lightweight indexing
+* Prompt templates & system presets per task
+* Image-to-image & inpainting endpoints
+
+---
+
+## 📜 License
+
+[MIT](LICENSE)
+
+---
+
+## 🙌 Credits
+
+* Ollama, Diffusers/Stable Diffusion, React, Tailwind, Express, FastAPI.
+
+---
+
+## 📎 Appendix: Minimal Express Wiring (Example)
+
+```js
+// server/src/index.js
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import chatRouter from './routes/chat.js';
+import filesRouter from './routes/files.js';
+import imagesRouter from './routes/images.js';
+
+dotenv.config();
+
+const app = express();
+app.use(express.json({ limit: process.env.MAX_UPLOAD || '25mb' }));
+app.use(cors({ origin: (process.env.ALLOWED_ORIGINS||'').split(',').filter(Boolean) }));
+
+app.use('/api/chat', chatRouter);
+app.use('/api/files', filesRouter);
+app.use('/api/images', imagesRouter);
+
+const port = process.env.PORT || 8000;
+app.listen(port, () => console.log(`API listening on http://127.0.0.1:${port}`));
+```
